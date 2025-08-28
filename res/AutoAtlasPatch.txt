@@ -1,4 +1,4 @@
-import { AssetManager, assetManager, Game, game, ImageAsset, JsonAsset, rect, size, SpriteAtlas, SpriteFrame, Texture2D } from 'cc';
+import { AssetManager, assetManager, ImageAsset, isValid, JsonAsset, rect, size, SpriteAtlas, SpriteFrame, Texture2D } from 'cc';
 import { DEBUG, EDITOR } from 'cc/env';
 
 const PAC_INFO = {
@@ -55,7 +55,7 @@ if (!EDITOR && DEBUG) {
     //更新图集uuids功能，重置后，旧的会失效，需要更新
     let uuids = [];
     let spriteUuids = {};
-    let loadedUUids = [];
+    let loadedUUids: Record<string, SpriteAtlas> = {};
     let loadingUUids = [];
     assetManager.loadBundle('auto_atlas_temp', { priority: 1000 }, (err, tempBundle) => {
         for (let item of uuids) {
@@ -116,15 +116,16 @@ if (!EDITOR && DEBUG) {
             return;
         }
         spriteAtlas.forEach(atlas => {
-            if (loadedUUids.includes(atlas.uuid)) {
-                return;
-            }
-            loadedUUids.push(atlas.uuid);
             let spriteFrames = atlas.getSpriteFrames();
             if (spriteFrames.length === 0) {
                 return;
             }
             let needChange = spriteFrames.some(frame => frame.texture !== spriteFrames[0].texture);
+            let loadedAtals = loadedUUids[atlas.uuid];
+            if (loadedAtals && isValid(loadedAtals) && !needChange) {
+                return;
+            }
+            loadedUUids[atlas.uuid] = atlas;
             if (needChange) {
                 spriteFrames.forEach((frame) => {
                     let spriteFrameInfo: typeof PAC_INFO['result']['atlases'][0]['spriteFrameInfos'][0] = null;
@@ -149,7 +150,9 @@ if (!EDITOR && DEBUG) {
             let loading = 0;
             spriteFrames.forEach(sf => {
                 let uuid = spriteUuids[sf.uuid];
-                if (uuid && !loadedUUids.includes(uuid) && !loadingUUids.includes(uuid)) {
+                let loadedAtals = loadedUUids[sf.uuid];
+                let loadedAtlasVaild = loadedAtals && isValid(loadedAtals);
+                if (uuid && !loadedAtlasVaild && !loadingUUids.includes(uuid)) {
                     loading++;
                     loadingUUids.push(uuid);
                     assetManager.loadAny({ uuid: uuid }, { bundle: 'auto_atlas_temp', priority: 100 }, () => {
