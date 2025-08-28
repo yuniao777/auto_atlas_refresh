@@ -1,0 +1,31 @@
+{
+    "$schema": "./@types/schema/package/index.json",
+    "package_version": 2,
+    "name": "auto_atlas_refresh",
+    "version": "1.0.0",
+    "author": "Cocos Creator",
+    "editor": ">=3.8.6",
+    "scripts": {
+        "preinstall": "node ./scripts/preinstall.js",
+        "build": "tsc",
+        "watch": "tsc -w"
+    },
+    "description": "i18n:auto_atlas_refresh.description",
+    "main": "./dist/main.js",
+    "devDependencies": {
+        "@cocos/creator-types": "^3.8.6",
+        "@types/fs-extra": "^11.0.4",
+        "@types/node": "^18.17.1",
+        "fs-extra": "^10.0.0",
+        "typescript": "^5.8.2"
+    },
+    "contributions": {
+        "assets": {
+            "menu": {
+                "methods": "./dist/main.js",
+                "assetMenu": "onAssetMenu"
+            }
+        },
+        "builder": "./dist/builder.js"
+    }
+}
