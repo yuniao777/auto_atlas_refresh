@@ -1,102 +1,189 @@
-import { AssetManager, assetManager, ImageAsset, isValid, JsonAsset, rect, size, SpriteAtlas, SpriteFrame, Texture2D } from 'cc';
-import { DEBUG, EDITOR } from 'cc/env';
+import { AssetManager, assetManager, gfx, ImageAsset, isValid, JsonAsset, rect, size, SpriteAtlas, SpriteFrame, Texture2D } from 'cc';
+import { DEBUG, EDITOR, JSB } from 'cc/env';
 
-const PAC_INFO = {
-    "result": {
-        "atlases": [
-            {
-                "spriteFrameInfos": [
-                    {
-                        "name": "底部栏",
-                        "uuid": "ebad1d47-d0b7-4a0f-a5a5-df55316c06d7@f9941",
-                        "imageUuid": "ebad1d47-d0b7-4a0f-a5a5-df55316c06d7",
-                        "textureUuid": "ebad1d47-d0b7-4a0f-a5a5-df55316c06d7@6c48a",
-                        "trim": {
-                            "rotatedWidth": 1179,
-                            "rotatedHeight": 354,
-                            "x": 3,
-                            "y": 3,
-                            "width": 1179,
-                            "height": 354
-                        },
-                        "rawWidth": 1179,
-                        "rawHeight": 354,
-                        "width": 1185,
-                        "height": 360,
-                        "originalPath": "",
-                        "rotated": false,
-                        "_mtime": 1751510532000,
-                        "x": 0,
-                        "y": 0,
-                        "rotatedWidth": 1185,
-                        "rotatedHeight": 360
-                    },
-                ],
-                "width": 2048,
-                "height": 2048,
-                "name": "LobbyAutoAtlas.pac-0",
-                "imagePath": "",
-                "imageUuid": "1884a716d",
-                "textureUuid": "1884a716d@6c48a",
-                "compressed": {
-                    "imagePathNoExt": "",
-                    "suffixs": [
-                        ".png"
-                    ]
-                }
-            }
-        ]
-    }
+let initTextures = function () {
+    return Promise.resolve();
 }
 
-if (!EDITOR && DEBUG) {
-    let infos: Record<string, typeof PAC_INFO> = {};
+if (!EDITOR && DEBUG && !JSB) {
+
+    class DynamicAtlasTexture extends Texture2D {
+        /**
+         * @en
+         * Initialize the render texture.
+         *
+         * @zh
+         * 初始化 render texture。
+         *
+         * @method initWithSize
+         */
+        public initWithSize(width: number, height: number, format: number = gfx.Format.RGBA8): void {
+            this.reset({
+                width,
+                height,
+                format,
+            });
+        }
+
+        /**
+         * @en
+         * Draw a texture to the specified position.
+         *
+         * @zh
+         * 将指定的图片渲染到指定的位置上。
+         *
+         * @method drawTextureAt
+         * @param {Texture2D} image
+         * @param {Number} x
+         * @param {Number} y
+         */
+        public drawTextureAt(image: ImageAsset, x: number, y: number): void {
+            const gfxTexture = this.getGFXTexture();
+            if (!image || !gfxTexture) {
+                return;
+            }
+
+            const gfxDevice = this._getGFXDevice();
+            if (!gfxDevice) {
+                console.warn('gfxDevice is null');
+                return;
+            }
+
+            const region = new gfx.BufferTextureCopy();
+            region.texOffset.x = x;
+            region.texOffset.y = y;
+            region.texExtent.width = image.width;
+            region.texExtent.height = image.height;
+            gfxDevice.copyTexImagesToTexture([image.data as HTMLCanvasElement], gfxTexture, [region]);
+        }
+    }
+
+    const PAC_INFO = {
+        "result": {
+            "atlases": [
+                {
+                    "spriteFrameInfos": [
+                        {
+                            "name": "",
+                            "uuid": "ebad1d47-d0b7-4a0f-a5a5-df55316c06d7@f9941",
+                            "imageUuid": "ebad1d47-d0b7-4a0f-a5a5-df55316c06d7",
+                            "textureUuid": "ebad1d47-d0b7-4a0f-a5a5-df55316c06d7@6c48a",
+                            "trim": {
+                                "rotatedWidth": 1179,
+                                "rotatedHeight": 354,
+                                "x": 3,
+                                "y": 3,
+                                "width": 1179,
+                                "height": 354
+                            },
+                            "rawWidth": 1179,
+                            "rawHeight": 354,
+                            "width": 1185,
+                            "height": 360,
+                            "originalPath": "",
+                            "rotated": false,
+                            "_mtime": 1751510532000,
+                            "x": 0,
+                            "y": 0,
+                            "rotatedWidth": 1185,
+                            "rotatedHeight": 360
+                        },
+                    ],
+                    "width": 2048,
+                    "height": 2048,
+                    "name": "LobbyAutoAtlas.pac-0",
+                    "imagePath": "",
+                    "imageUuid": "1884a716d",
+                    "textureUuid": "1884a716d@6c48a",
+                    "compressed": {
+                        "imagePathNoExt": "",
+                        "suffixs": [
+                            ".png"
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+
+    // let infos: Record<string, typeof PAC_INFO> = {};
     let textures: Record<string, Record<string, Texture2D>> = {};
     //更新图集uuids功能，重置后，旧的会失效，需要更新
     let uuids = [];
-    let spriteUuids = {};
+    let spriteAtlasUuids = {};
     let loadedUUids: Record<string, SpriteAtlas> = {};
     let loadingUUids = [];
-    assetManager.loadBundle('auto_atlas_temp', { priority: 1000 }, (err, tempBundle) => {
-        for (let item of uuids) {
-            let { uuid } = item;
-            if (err) {
-                console.error(err);
-                return;
-            }
-            assetManager.loadAny({ path: 'atlas/' + uuid + '/pac-info' }, { bundle: 'auto_atlas_temp', priority: 1000 }, (err, asset: JsonAsset) => {
-                if (err) {
-                    console.error(err);
-                    return;
-                }
-                let info = asset.json as typeof PAC_INFO;
-                infos[uuid] = info;
-                // let imageUuids = info.result.atlases.map(item => item);
+    initTextures = function () {
+        return new Promise((resolve, reject) => {
+            let count = 0;
+            for (let item of uuids) {
+                let { uuid, info, bundle } = item;
                 for (let atlas of info.result.atlases) {
                     let imageUuid = atlas.imageUuid;
+                    let texture = new DynamicAtlasTexture()
+                    texture.initWithSize(atlas.width, atlas.height);
+                    let ts = textures[uuid];
+                    if (!ts) {
+                        ts = {};
+                        textures[uuid] = ts;
+                    }
+                    ts[imageUuid] = texture;
+
                     let spriteFrameInfos = atlas.spriteFrameInfos;
                     spriteFrameInfos.forEach(item => {
-                        spriteUuids[item.uuid] = uuid;
-                    });
-                    assetManager.loadAny({ path: 'atlas/' + uuid + '/' + imageUuid }, { bundle: 'auto_atlas_temp', priority: 1000 }, (err, asset: ImageAsset) => {
-                        if (err) {
-                            console.error(err);
-                            return;
-                        }
-                        let texture = new Texture2D()
-                        texture.image = asset;
-                        let ts = textures[uuid];
-                        if (!ts) {
-                            ts = {};
-                            textures[uuid] = ts;
-                        }
-                        ts[imageUuid] = texture;
-                        // assetManager.loadAny({ uuid: uuid }, { bundle: 'auto_atlas_temp', priority: 1000 });
+                        spriteAtlasUuids[item.uuid] = uuid;
+                        count++;
+                        assetManager.loadAny({ uuid: item.uuid }, { bundle, priority: 1000 }, (err, asset: SpriteFrame) => {
+                            // console.log('loadAny', asset, err);
+                            count--;
+                            let t = asset.texture as Texture2D;
+                            if (item.rotated) {
+                                // 处理旋转的情况
+                                // 将纹理旋转90度再绘制到图集纹理上
+                                // 由于cocos不支持直接旋转拷贝，这里使用canvas临时旋转
+                                if (t && t.image) {
+                                    const srcImage = t.image;
+                                    // 创建临时canvas
+                                    const rotatedCanvas = document.createElement('canvas');
+                                    rotatedCanvas.width = item.trim.rotatedWidth;
+                                    rotatedCanvas.height = item.trim.rotatedHeight;
+                                    const ctx = rotatedCanvas.getContext('2d');
+                                    if (ctx) {
+                                        // 顺时针旋转90度（以canvas左上角为原点，先平移到右上角再旋转）
+                                        ctx.save();
+                                        ctx.translate(rotatedCanvas.width, 0);
+                                        ctx.rotate(Math.PI / 2);
+                                        // 绘制原图
+                                        ctx.drawImage(
+                                            srcImage.data as HTMLImageElement,
+                                            0,
+                                            0,
+                                            item.trim.rotatedHeight,
+                                            item.trim.rotatedWidth
+                                        );
+                                        ctx.restore();
+                                        // 用旋转后的canvas生成ImageAsset
+                                        const rotatedImageAsset = new ImageAsset(rotatedCanvas);
+                                        texture.drawTextureAt(rotatedImageAsset, item.x-(item.rawHeight-item.height)/2, item.y-(item.rawWidth-item.width));
+                                    }
+                                }
+                            } else {
+                                texture.drawTextureAt(t.image, item.x-(item.rawHeight-item.height)/2, item.y-(item.rawWidth-item.width));
+                            }
+                            assetManager.releaseAsset(asset);
+                            if (count === 0) {
+                                resolve();
+                                assetManager.pipeline.append(parseAppend);
+                            }
+                        });
                     });
                 }
-            });
-        }
-    });
+            }
+            if (count === 0) {
+                resolve();
+            }
+        });
+    }
 
     function parseAppend(task: AssetManager.Task, done: ((err?: Error | null) => void)) {
         task.output = task.input;
@@ -130,7 +217,8 @@ if (!EDITOR && DEBUG) {
                 spriteFrames.forEach((frame) => {
                     let spriteFrameInfo: typeof PAC_INFO['result']['atlases'][0]['spriteFrameInfos'][0] = null;
                     let texture: Texture2D;
-                    for (let atlasData of infos[atlas.uuid].result.atlases) {
+                    let info = uuids.find(item => item.uuid === atlas.uuid)?.info;
+                    for (let atlasData of info.result.atlases) {
                         spriteFrameInfo = atlasData.spriteFrameInfos.find(info => info.uuid === frame.uuid);
                         if (spriteFrameInfo) {
                             texture = textures[atlas.uuid][atlasData.imageUuid];
@@ -138,7 +226,8 @@ if (!EDITOR && DEBUG) {
                         }
                     }
                     if (spriteFrameInfo) {
-                        frame.reset({ texture, isRotate: spriteFrameInfo.rotated, originalSize: size(spriteFrameInfo.rawWidth, spriteFrameInfo.rawHeight), rect: rect(spriteFrameInfo.x, spriteFrameInfo.y, spriteFrameInfo.width, spriteFrameInfo.height) });
+                        // console.log(frame.name + '设置成功');
+                        frame.reset({ texture, isRotate: spriteFrameInfo.rotated, originalSize: size(spriteFrameInfo.rawWidth, spriteFrameInfo.rawHeight), rect: rect(spriteFrameInfo.trim.x, spriteFrameInfo.trim.y, spriteFrameInfo.trim.width, spriteFrameInfo.trim.height) });
                     } else {
                         console.warn('未找到' + frame.name + '的纹理');
                     }
@@ -149,7 +238,7 @@ if (!EDITOR && DEBUG) {
             let endCount = 0;
             let loading = 0;
             spriteFrames.forEach(sf => {
-                let uuid = spriteUuids[sf.uuid];
+                let uuid = spriteAtlasUuids[sf.uuid];
                 let loadedAtals = loadedUUids[sf.uuid];
                 let loadedAtlasVaild = loadedAtals && isValid(loadedAtals);
                 if (uuid && !loadedAtlasVaild && !loadingUUids.includes(uuid)) {
@@ -171,5 +260,6 @@ if (!EDITOR && DEBUG) {
         done();
     }
 
-    assetManager.pipeline.append(parseAppend);
 }
+
+export { initTextures };

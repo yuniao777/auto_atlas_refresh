@@ -45,40 +45,19 @@ async function refreshPac(assetInfo: AssetInfo) {
         return;
     }
     let dirs = fs.readdirSync(uuidTempPath);
-    let buildPath = dirs.find(dir => dir.startsWith('build') && fs.existsSync(path.join(uuidTempPath, dir, 'preview', 'texture-packer', 'preview')));
+    let buildPath = dirs.find(dir => dir.startsWith('build') && fs.existsSync(path.join(uuidTempPath, dir, 'texture-packerpreview')));
     if (!buildPath) {
         console.error('未查找到预览文件，请确保预览后再执行此操作');
         return;
     }
-    let previewPath = path.join(uuidTempPath, buildPath, 'preview', 'texture-packer', 'preview');
+    let previewPath = path.join(uuidTempPath, buildPath, 'texture-packerpreview');
     if (!fs.existsSync(previewPath)) {
         console.error('未查找到预览文件，请确保预览后再执行此操作');
         return;
     }
 
-    let temp = path.join(Editor.Project.path, 'assets', 'auto_atlas_temp');
-    if (!fs.existsSync(temp)) {
-        fs.mkdirSync(temp);
-        // console.warn('请将temp文件夹添加到bundle过滤配置中');
-        let tempUrl = temp.replace(Editor.Project.path, '');
-        tempUrl = tempUrl.replace(/\\/g, '/');
-        tempUrl = 'db://' + tempUrl.replace('/', '');
-        // console.warn(tempUrl);
-        await Editor.Message.request('asset-db', 'refresh-asset', tempUrl);
-        let metaPath = temp + '.meta';
-        if (fs.existsSync(metaPath)) {
-            let meta = fs.readFileSync(metaPath);
-            let metaJson = JSON.parse(meta.toString());
-            if (!metaJson.userData) {
-                metaJson.userData = {};
-            }
-            metaJson.userData.isBundle = true;
-            fs.writeFileSync(metaPath, JSON.stringify(metaJson));
-            await Editor.Message.request('asset-db', 'refresh-asset', tempUrl);
-        }
-    }
-
-    let scriptsPath = path.join(temp, 'scripts');
+    let mainDir = path.join(Editor.Project.path, 'assets', 'main');
+    let scriptsPath = path.join(mainDir, 'scripts');
     if (!fs.existsSync(scriptsPath)) {
         fs.mkdirSync(scriptsPath);
     }
@@ -92,53 +71,29 @@ async function refreshPac(assetInfo: AssetInfo) {
     // 查找图集
     let pacFormat = "db://assets/**/*.pac";
     let pacs = await Editor.Message.request("asset-db", "query-assets", { pattern: pacFormat });
-
+    let bundles: Record<string, string> = {};
+    for (let pac of pacs) {
+        let pacPath = await Editor.Message.request("asset-db", "query-url", pac.uuid) as string;
+        console.log(pacPath);
+        let assets = 'db://assets/';
+        let bundle = pacPath.substring(pacPath.indexOf(assets) + assets.length);
+        bundle = bundle.substring(0, bundle.indexOf('/'));
+        bundles[pac.uuid] = bundle;
+    }
     // 生成新的uuids数组字符串
     let newUuidsStr = pacs.map(pac => {
-        return `{ uuid: '${pac.uuid}' }`
+        let pacBuildPath = path.join(Editor.Project.path, 'temp', 'asset-db', 'assets', pac.uuid.substring(0, 2), pac.uuid, buildPath, 'texture-packerpreview');
+        let pacInfo = path.join(pacBuildPath, 'pac-info.json');
+        let pacInfoData = JSON.parse(fs.readFileSync(pacInfo, 'utf-8'));
+        return `{ uuid: '${pac.uuid}', info: ${JSON.stringify(pacInfoData)}, bundle: '${bundles[pac.uuid]}' }`
     }).join(', ');
 
-    // 替换代码中的uuids数组
-    let uuidPattern = /let\s+uuids\s*=\s*\[(.*?)\]/;
-    code = code.replace(uuidPattern, `let uuids = [${newUuidsStr}]`);
+    // 删除原有的uuids赋值行，直接用新的 uuid 值插入
+    code = code.replace(/let\s+uuids\s*=.*?;\s*\n/, `let uuids = [${newUuidsStr}];\n`);
     fs.writeFileSync(patchPath, code);
 
-    // 删除atlas中的无用资源
-    let atlasDirs = fs.readdirSync(path.join(temp, 'atlas'));
-    atlasDirs.forEach(dir => {
-        if (!pacs.find(pac => pac.uuid === dir) && !dir.endsWith('.meta')) {
-            fs.removeSync(path.join(temp, 'atlas', dir));
-            fs.removeSync(path.join(temp, 'atlas', dir + '.meta'));
-        }
-    });
 
     Editor.Message.request('asset-db', 'refresh-asset', 'db://assets/auto_atlas_temp/scripts/AutoAtlasPatch.ts');
-
-    uuidTempPath = path.join(temp, 'atlas', assetInfo.uuid);
-    if (!fs.existsSync(uuidTempPath)) {
-        fs.mkdirSync(uuidTempPath, { recursive: true });
-    }
-    fs.copySync(previewPath, uuidTempPath, { overwrite: true });
-
-    let imgDir = fs.readdirSync(path.join(temp, 'atlas', assetInfo.uuid));
-    let pacInfo = path.join(temp, 'atlas', assetInfo.uuid, 'pac-info.json');
-    let pacInfoData = JSON.parse(fs.readFileSync(pacInfo, 'utf-8'));
-    let atlases: any[] = pacInfoData.result.atlases;
-    // for (let atlas of atlases) {
-    //     let imageUuid = atlas.imageUuid;
-    // }
-    imgDir.forEach((img) => {
-        if (!img.endsWith('.png')) {
-            return;
-        }
-        if (!atlases.find(atlas => atlas.imageUuid === path.basename(img, '.png'))) {
-            fs.removeSync(path.join(temp, 'atlas', assetInfo.uuid, img));
-            fs.removeSync(path.join(temp, 'atlas', assetInfo.uuid, img + '.meta'));
-        }
-    });
-
-    let tempUrl = await Editor.Message.request('asset-db', 'query-url', temp) as string;
-    await Editor.Message.request('asset-db', 'refresh-asset', tempUrl);
 
     console.log(`${assetInfo.url}自动图集刷新成功（请确保预览后再执行此操作）`);
 }
